@@ -46,6 +46,25 @@ exports.createSite = async (req, res) => {
       radio: radio.length
     });
     
+    // Filter out equipment with empty required fields
+    const validAntennas = antennas.filter(antenna => 
+      antenna.model && antenna.model.trim() !== '' &&
+      antenna.type && antenna.type.trim() !== '' &&
+      antenna.band && antenna.band.trim() !== ''
+    );
+    
+    const validTransmission = transmission.filter(equipment => 
+      equipment.model && equipment.model.trim() !== '' &&
+      equipment.capacity && equipment.capacity.trim() !== ''
+    );
+    
+    const validRadio = radio.filter(equipment => 
+      equipment.model && equipment.model.trim() !== '' &&
+      equipment.technology && equipment.technology.trim() !== ''
+    );
+    
+    console.log(`Filtered equipment counts: antennas=${validAntennas.length}, transmission=${validTransmission.length}, radio=${validRadio.length}`);
+    
     // Check if site with this ID already exists
     const existingSite = await Site.findOne({ id: siteData.id });
     if (existingSite) {
@@ -55,6 +74,9 @@ exports.createSite = async (req, res) => {
     
     // Create new site
     const newSite = new Site(siteData);
+    
+    // Set equipment count based on valid equipment
+    newSite.equipmentCount = validAntennas.length + validTransmission.length + validRadio.length;
     
     // Validate site data before saving
     try {
@@ -72,12 +94,12 @@ exports.createSite = async (req, res) => {
     console.log('Site saved successfully with ID:', savedSite._id);
     
     // Process equipment if provided
-    if (antennas.length > 0 || transmission.length > 0 || radio.length > 0) {
+    if (validAntennas.length > 0 || validTransmission.length > 0 || validRadio.length > 0) {
       console.log('Processing equipment...');
       
       try {
         // Process antennas
-        const antennaPromises = antennas.map(antenna => {
+        const antennaPromises = validAntennas.map(antenna => {
           console.log('Creating antenna:', antenna);
           const newAntenna = new Antenna({
             site: savedSite._id,
@@ -96,7 +118,7 @@ exports.createSite = async (req, res) => {
         });
         
         // Process transmission equipment
-        const transmissionPromises = transmission.map(equipment => {
+        const transmissionPromises = validTransmission.map(equipment => {
           console.log('Creating transmission equipment:', equipment);
           const newEquipment = new TransmissionEquipment({
             site: savedSite._id,
@@ -115,7 +137,7 @@ exports.createSite = async (req, res) => {
         });
         
         // Process radio equipment
-        const radioPromises = radio.map(equipment => {
+        const radioPromises = validRadio.map(equipment => {
           console.log('Creating radio equipment:', equipment);
           const newEquipment = new RadioEquipment({
             site: savedSite._id,
@@ -159,12 +181,12 @@ exports.createSite = async (req, res) => {
     let errorMessage = 'Erreur lors de la création du site';
     let statusCode = 500;
     
-    if (error.name === 'ValidationError') {
-      errorMessage = 'Validation error';
+    if (error.name === 'ValidationError' || error.message?.includes('validation')) {
+      errorMessage = 'Erreur de validation des données';
       statusCode = 400;
-      console.error('Validation error details:', error.errors);
+      console.error('Validation error details:', error.errors || error.message);
     } else if (error.code === 11000) {
-      errorMessage = 'Duplicate key error';
+      errorMessage = 'Erreur de clé dupliquée';
       statusCode = 400;
       console.error('Duplicate key details:', error.keyValue);
     }
@@ -215,33 +237,81 @@ exports.updateSite = async (req, res) => {
         
         console.log('Existing equipment deleted');
         
+        // Filter out antennas with empty required fields
+        const validAntennas = antennas.filter(antenna => 
+          antenna.model && antenna.model.trim() !== '' &&
+          antenna.type && antenna.type.trim() !== '' &&
+          antenna.band && antenna.band.trim() !== ''
+        );
+        
+        // Filter out transmission equipment with empty required fields
+        const validTransmission = transmission.filter(equipment => 
+          equipment.model && equipment.model.trim() !== '' &&
+          equipment.capacity && equipment.capacity.trim() !== ''
+        );
+        
+        // Filter out radio equipment with empty required fields
+        const validRadio = radio.filter(equipment => 
+          equipment.model && equipment.model.trim() !== '' &&
+          equipment.technology && equipment.technology.trim() !== ''
+        );
+        
+        console.log(`Filtered equipment counts: antennas=${validAntennas.length}, transmission=${validTransmission.length}, radio=${validRadio.length}`);
+        
         // Process new antennas
-        const antennaPromises = antennas.map(antenna => {
+        const antennaPromises = validAntennas.map(antenna => {
           console.log('Creating updated antenna:', antenna);
           const newAntenna = new Antenna({
             site: site._id,
             ...antenna
           });
+          
+          // Validate antenna data
+          try {
+            newAntenna.validateSync();
+          } catch (validationError) {
+            console.error('Antenna validation error:', validationError);
+            throw new Error(`Antenna validation error: ${JSON.stringify(validationError.errors)}`);
+          }
+          
           return newAntenna.save();
         });
         
         // Process new transmission equipment
-        const transmissionPromises = transmission.map(equipment => {
+        const transmissionPromises = validTransmission.map(equipment => {
           console.log('Creating updated transmission equipment:', equipment);
           const newEquipment = new TransmissionEquipment({
             site: site._id,
             ...equipment
           });
+          
+          // Validate transmission equipment data
+          try {
+            newEquipment.validateSync();
+          } catch (validationError) {
+            console.error('Transmission equipment validation error:', validationError);
+            throw new Error(`Transmission equipment validation error: ${JSON.stringify(validationError.errors)}`);
+          }
+          
           return newEquipment.save();
         });
         
         // Process new radio equipment
-        const radioPromises = radio.map(equipment => {
+        const radioPromises = validRadio.map(equipment => {
           console.log('Creating updated radio equipment:', equipment);
           const newEquipment = new RadioEquipment({
             site: site._id,
             ...equipment
           });
+          
+          // Validate radio equipment data
+          try {
+            newEquipment.validateSync();
+          } catch (validationError) {
+            console.error('Radio equipment validation error:', validationError);
+            throw new Error(`Radio equipment validation error: ${JSON.stringify(validationError.errors)}`);
+          }
+          
           return newEquipment.save();
         });
         
@@ -256,7 +326,7 @@ exports.updateSite = async (req, res) => {
         console.log('All equipment updated successfully');
         
         // Update equipment count
-        const totalEquipment = antennas.length + transmission.length + radio.length;
+        const totalEquipment = validAntennas.length + validTransmission.length + validRadio.length;
         await Site.findByIdAndUpdate(
           site._id,
           { equipmentCount: totalEquipment }
@@ -272,7 +342,25 @@ exports.updateSite = async (req, res) => {
     res.status(200).json(updatedSite);
   } catch (error) {
     console.error('Error updating site:', error);
-    res.status(500).json({ message: 'Erreur lors de la mise à jour du site' });
+    
+    // Provide more detailed error information
+    let errorMessage = 'Erreur lors de la mise à jour du site';
+    let statusCode = 500;
+    
+    if (error.name === 'ValidationError' || error.message?.includes('validation')) {
+      errorMessage = 'Erreur de validation des données';
+      statusCode = 400;
+      console.error('Validation error details:', error.errors || error.message);
+    } else if (error.code === 11000) {
+      errorMessage = 'Erreur de clé dupliquée';
+      statusCode = 400;
+      console.error('Duplicate key details:', error.keyValue);
+    }
+    
+    res.status(statusCode).json({ 
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
