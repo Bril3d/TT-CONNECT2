@@ -121,10 +121,10 @@ export default function PlanifierInterventionPage() {
 
     // Check if date is in the past
     const today = new Date(new Date().setHours(0, 0, 0, 0))
-    if (date > today) {
+    if (date < today) {
       toast({
         title: "Erreur de validation",
-        description: "La date d'intervention ne peut pas être antérieure à aujourd'hui.",
+        description: "La date d'intervention doit être supérieure à aujourd'hui.",
         variant: "destructive",
       })
       setIsSubmitting(false)
